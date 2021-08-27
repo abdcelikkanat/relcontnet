@@ -7,7 +7,6 @@ from datasets.synthetic.nhppnm import *
 import matplotlib.pyplot as plt
 import torch
 from lib.animation import *
-from examples.utilities import *
 torch.set_num_threads(16)
 
 print("Number of threads: {}".format(torch.get_num_threads()))
@@ -16,71 +15,71 @@ print("Number of threads: {}".format(torch.get_num_threads()))
 examples = dict()
 # t=1 t=3 and t=5
 
-# Parameter Settings for network
+########################################
+########## Parameter Settings ##########
+########################################
 seed = 0
 dim = 2
-clusterASize = 8 # 64
-clusterACov = 0.1 * np.eye(dim)
-clusterBSize = 6 # 36
-clusterBCov = 0.5 * np.eye(dim)
+clusterASize = 64 # 64
+clusterACov = 0.1*np.eye(dim)
+clusterBSize = 36 # 36
+clusterBCov = 0.5*np.eye(dim)
 numOfNodes = clusterASize + clusterBSize
-# Parameter Settings for learning
+
+# Choose the model
+
+# Set the time and other parameters
 numOfNegativeSamples = 5
 gamma = 1.75
-maxTime = 7.0  #5.5
-trainingsetTime = 5.0
+maxTime = 8.0  #5.5
+trainSetTime = 4.0
 timeInterval = 0.01
-windowSize = 1.0
-stepSize = 1.0
+windowSize = 4.0
+stepSize = 4.0
+# Set the number of epochs
 numOfEpochs = 300
+# Set the learning rate
 lr = 0.1
 
 # Set the seed value for torch
 torch.random.manual_seed(seed=seed)
 np.random.seed(seed=seed)
 
-# Set the base directory
-basedir = os.path.dirname(os.path.abspath(__file__))
-filename = "clustercollision_seed={}_gamma={}_maxT={}_timeInter={}_windowSize={}_stepSize={}_numOfEpochs={}_lr={}"\
-            .format(seed, gamma, maxTime, timeInterval, windowSize, stepSize, numOfEpochs, lr)
-basefolder = os.path.join(basedir, "../figures/", "cluster_collision")
-
-# Construc the clusters
 c = np.asarray([ [[-15, 0], [15, 0]], [[23, 0], [-23, 0]], [[-18, 0], [18, 0]], [[6, 0], [-6, 0]] ] )
-z0 = np.zeros(shape=(c.shape[0], clusterASize+clusterBSize, c.shape[2]), dtype=np.float)
+x = np.zeros(shape=(c.shape[0], clusterASize+clusterBSize, c.shape[2]), dtype=np.float)
+
 r = 2.0
 for o in range(c.shape[0]):
-    z0[o, 0:clusterASize, :] = c[o, 0, :]
-    z0[o, clusterASize:clusterASize+clusterBSize, :] = c[o, 1, :]
+    x[o, 0:clusterASize, :] = c[o, 0, :]
+    x[o, clusterASize:clusterASize+clusterBSize, :] = c[o, 1, :]
 for i in range(numOfNodes):
-    z0[0, i, 0] += r * np.random.normal(loc=0, scale=1.0, size=(1,))
-    z0[0, i, 1] += r * np.random.normal(loc=0, scale=1.0, size=(1,))
+    x[0, i, 0] += r * np.random.normal(loc=0, scale=1.0, size=(1,))
+    x[0, i, 1] += r * np.random.normal(loc=0, scale=1.0, size=(1,))
+
+
+
+
 # Extract the model parameters
+z0 = x
 order = z0.shape[0]
 numOfNodes = z0.shape[1]
 dim = z0.shape[2]
 
-# Sample the event times
+
+# Animation
+basedir = os.path.dirname(os.path.abspath(__file__))
+filename = "clustercollision_seed={}_gamma={}_maxT={}_timeInter={}_windowSize={}_stepSize={}_numOfEpochs={}_lr={}"\
+            .format(seed, gamma, maxTime, timeInterval, windowSize, stepSize, numOfEpochs, lr)
+
+########################################
+######### Sampling event times #########
+########################################
 nm = NHPPNM(gamma=gamma, z0=z0, maxTime=maxTime, timeInterval=timeInterval, seed=seed)
-networkEvents = nm.constructNetwork()
+network = nm.constructNetwork()
 
-# Construct the training and testing sets
-dataset = contructDataset(networkEvents, numOfNodes, windowSize, stepSize, maxTime)
-trainSet, testSet = splitDataset(dataset=dataset, trainingsetTime=trainingsetTime)
-
-# Learning the model
-init_time = time.time()
-nhppNmmModel = TrainNhppNm(trainSet=trainSet, testSet=testSet, numOfepochs=numOfEpochs, lr=lr,
-                           numOfNodes=numOfNodes, dim=dim, order=order, numOfSamples=10, timeInterval=0.01, seed=seed)
-train_loss, test_loss = nhppNmmModel.learn()
-print("Total Running time: {}".format(time.time() - init_time))
-
-# Define the node pairs
-i, j = ( 0, 1 )
-# Define the time points for the figures
+# === One Figure Animation === #
 timePoints = np.arange(0, maxTime, 0.1)
-
-# Animate only the ground-truth movements
+basefolder = os.path.join(basedir, "../figures/", "cluster_collision_old")
 plt.figure()
 z_true = np.zeros(shape=(len(timePoints), numOfNodes, dim), dtype=np.float)
 for inx in range(len(timePoints)):
@@ -93,6 +92,62 @@ anim = Animation(timePoints=timePoints,
                  marker='.', markerSize=5, delay=250, margin=[0.1, 3.0])
 anim.addData(x=z_true, index=0, title="Ground-truth")
 anim.plot(filePath=os.path.join(basefolder, "singlelatentPosition_{}.gif".format(filename)))
+# ===  === #
+
+
+########################################
+###### Construct the training set ######
+########################################
+datasetSet = [[t, t+windowSize, []] for t in np.arange(0.0, maxTime, stepSize)]
+for tInx in range(len(datasetSet)):
+    inx1, inx2 = np.triu_indices(numOfNodes, k=1)
+    for i, j in zip(inx1, inx2):
+        events_ij = []
+        for e in network[i][j]:
+            if datasetSet[tInx][0] <= e <= datasetSet[tInx][1]:
+                events_ij.append(e)
+        datasetSet[tInx][2].append( [ [i, j], events_ij ]  )
+
+    #     if len(datasetSet[tInx][2]) > 0:
+    #         datasetSet[tInx][2].append([i, j, -1])
+    #
+    # samples = np.random.randint(low=0, high=numOfNodes, size=(2, numOfNegativeSamples))
+    # for i, j in zip(samples[0, :], samples[1, :]):
+    #     datasetSet[tInx][2].append([i, j, -1])
+
+# Shuffle the training set
+# np.random.shuffle(datasetSet)
+
+trainSet, testSet = [], []
+for tInx in range(len(datasetSet)):
+    if datasetSet[tInx][1] <= trainSetTime:
+        trainSet.append(datasetSet[tInx])
+    else:
+        testSet.append(datasetSet[tInx])
+
+# ########################################
+# ###### Construct the testing set ######
+# ########################################
+# testSet = [[t, t+windowSize, []] for t in np.arange(trainSetTime, maxTime, stepSize)]
+# for i in range(len(testSet)):
+#     for k in range(len(eventTimes)):
+#         if testSet[i][0] <= eventTimes[k] <= testSet[i][1]:
+#             testSet[i][2].append( eventTimes[k] )
+
+
+########################################
+########### Define the model ###########
+########################################
+init_time = time.time()
+nhppNmmModel = TrainNhppNm(trainSet=trainSet, testSet=testSet, numOfepochs=numOfEpochs, lr=lr,
+                           numOfNodes=numOfNodes, dim=dim, order=order, numOfSamples=10, timeInterval=0.01, seed=seed)
+train_loss, test_loss = nhppNmmModel.learn()
+print("Total Running time: {}".format(time.time() - init_time))
+
+# Define the node pairs
+i, j = ( 0, 1 )
+# Define the time points for the figures
+timePoints = np.arange(0, maxTime, 0.1)
 
 # Animate the latent positions
 plt.figure()

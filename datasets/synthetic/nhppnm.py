@@ -154,13 +154,28 @@ class NHPPNM:
 
     def getNLL(self, data, numOfSamples=10):
 
+        # neg_logLikelihood = 0.
+        # for tInit, tLast, eventTimes in data:
+        #     for i, j in zip(self.__nodePairs[0], self.__nodePairs[1]):
+        #         ci = self.__approxIntensityIntegral(i=i, j=j, tInit=tInit, tLast=tLast, numOfSamples=numOfSamples)
+        #         neg_logLikelihood += -ci
+        #         for e in eventTimes:
+        #             neg_logLikelihood += self.__computeLogIntensityForPair(i=i, j=j, t=e)
+        #
+        # return -neg_logLikelihood
+
         neg_logLikelihood = 0.
-        for tInit, tLast, eventTimes in data:
+        for tInit, tLast, eventsList in data:
             for i, j in zip(self.__nodePairs[0], self.__nodePairs[1]):
                 ci = self.__approxIntensityIntegral(i=i, j=j, tInit=tInit, tLast=tLast, numOfSamples=numOfSamples)
                 neg_logLikelihood += -ci
-                for e in eventTimes:
-                    neg_logLikelihood += self.__computeLogIntensityForPair(i=i, j=j, t=e)
+
+            for ij_list in eventsList:
+                ij_pair = ij_list[0]
+                ij_events = ij_list[1]
+
+                for e in ij_events:
+                    neg_logLikelihood += self.__computeLogIntensityForPair(i=ij_pair[0], j=ij_pair[1], t=e)
 
         return -neg_logLikelihood
 
